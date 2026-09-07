@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PriceCompare - Monitoring Harga Barang</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- HTML5 QRCode Scanner -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#10b981',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom styles for scanner */
+        #reader { width: 100%; max-width: 500px; margin: 0 auto; }
+        #reader__scan_region { min-height: 250px; background: #f3f4f6; }
+        
+        /* Toast animation */
+        .toast-enter { animation: slideInRight 0.3s ease-out forwards; }
+        .toast-leave { animation: fadeOut 0.3s ease-out forwards; }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 h-screen overflow-hidden flex flex-col font-sans">
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2"></div>
+
+    <!-- SCANNER MODAL -->
+    <div id="scanner-modal" class="fixed inset-0 bg-black/75 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg w-full max-w-md overflow-hidden shadow-2xl relative">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                <h3 class="font-bold text-lg">Scan Barcode Barang</h3>
+                <button onclick="closeScanner()" class="text-gray-500 hover:text-red-500">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <div id="reader"></div>
+                <p class="text-sm text-gray-500 text-center mt-4">Arahkan kamera ke barcode/QR Code barang.</p>
+            </div>
+            <div class="p-4 border-t bg-gray-50 text-right">
+                <button onclick="closeScanner()" class="bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 transition">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGIN SCREEN -->
+    <div id="login-view" class="flex-1 flex items-center justify-center bg-gray-100 absolute inset-0 z-40">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm">
+            <div class="text-center mb-6">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 text-blue-600 mb-2">
+                    <i data-lucide="bar-chart-2" class="w-8 h-8"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">PriceCompare</h1>
+                <p class="text-sm text-gray-500">Sistem Monitoring Harga</p>
+            </div>
+            <form onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input type="text" id="login-username" class="w-full border-gray-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500" value="admin" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="login-password" class="w-full border-gray-300 rounded-md shadow-sm border p-2 focus:ring-blue-500 focus:border-blue-500" value="admin123" required>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white font-medium py-2 px-4 rounded-md hover:bg-blue-700 transition">
+                    Masuk
+                </button>
+                <p class="text-xs text-center text-gray-400 mt-2">Gunakan admin / admin123 untuk demo</p>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APP SCREEN -->
+    <div id="app-view" class="hidden flex h-screen w-full">
+        <!-- SIDEBAR -->
+        <aside class="w-64 bg-white border-r shadow-sm hidden md:flex flex-col h-full z-20">
+            <div class="p-4 border-b flex items-center gap-3">
+                <i data-lucide="bar-chart-2" class="text-blue-600"></i>
+                <span class="font-bold text-xl text-gray-800">PriceCompare</span>
+            </div>
+            <nav class="flex-1 p-4 space-y-1">
+                <a href="#" onclick="navigate('dashboard')" id="nav-dashboard" class="nav-link flex items-center gap-3 px-3 py-2 rounded-md bg-blue-50 text-blue-700 font-medium transition">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i> Dashboard
+                </a>
+                <a href="#" onclick="navigate('items')" id="nav-items" class="nav-link flex items-center gap-3 px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 transition">
+                    <i data-lucide="box" class="w-5 h-5"></i> Master Barang
+                </a>
+                <a href="#" onclick="navigate('stores')" id="nav-stores" class="nav-link flex items-center gap-3 px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 transition">
+                    <i data-lucide="store" class="w-5 h-5"></i> Master Toko
+                </a>
+                <a href="#" onclick="navigate('prices')" id="nav-prices" class="nav-link flex items-center gap-3 px-3 py-2 rounded-md text-gray-600 hover:bg-gray-100 transition">
+                    <i data-lucide="tag" class="w-5 h-5"></i> Entry Harga
+                </a>
+            </nav>
+            <div class="p-4 border-t">
+                <div class="flex items-center gap-3 mb-4">
+                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">A</div>
+                    <div>
+                        <p class="text-sm font-medium">Administrator</p>
+                        <p class="text-xs text-gray-500">admin</p>
+                    </div>
+                </div>
+                <button onclick="handleLogout()" class="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-md transition">
+                    <i data-lucide="log-out" class="w-4 h-4"></i> Keluar
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden relative">
+            <!-- MOBILE HEADER -->
+            <header class="md:hidden bg-white shadow-sm border-b p-4 flex items-center justify-between z-20">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="bar-chart-2" class="text-blue-600 w-6 h-6"></i>
+                    <span class="font-bold text-lg">PriceCompare</span>
+                </div>
+                <button onclick="toggleMobileMenu()" class="text-gray-600 p-1">
+                    <i data-lucide="menu"></i>
+                </button>
+            </header>
+
+            <!-- MOBILE MENU OVERLAY -->
+            <div id="mobile-menu" class="fixed inset-0 bg-gray-800/50 z-30 hidden" onclick="toggleMobileMenu()">
+                <div class="bg-white w-64 h-full shadow-xl flex flex-col" onclick="event.stopPropagation()">
+                    <div class="p-4 border-b bg-gray-50 font-bold text-lg flex justify-between items-center">
+                        Menu
+                        <button onclick="toggleMobileMenu()"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <nav class="flex-1 p-2 space-y-1">
+                        <a href="#" onclick="navigate('dashboard'); toggleMobileMenu()" class="flex items-center gap-3 px-3 py-3 rounded-md text-gray-700 hover:bg-blue-50">
+                            <i data-lucide="layout-dashboard" class="w-5 h-5 text-gray-500"></i> Dashboard
+                        </a>
+                        <a href="#" onclick="navigate('items'); toggleMobileMenu()" class="flex items-center gap-3 px-3 py-3 rounded-md text-gray-700 hover:bg-blue-50">
+                            <i data-lucide="box" class="w-5 h-5 text-gray-500"></i> Master Barang
+                        </a>
+                        <a href="#" onclick="navigate('stores'); toggleMobileMenu()" class="flex items-center gap-3 px-3 py-3 rounded-md text-gray-700 hover:bg-blue-50">
+                            <i data-lucide="store" class="w-5 h-5 text-gray-500"></i> Master Toko
+                        </a>
+                        <a href="#" onclick="navigate('prices'); toggleMobileMenu()" class="flex items-center gap-3 px-3 py-3 rounded-md text-gray-700 hover:bg-blue-50">
+                            <i data-lucide="tag" class="w-5 h-5 text-gray-500"></i> Entry Harga
+                        </a>
+                    </nav>
+                    <div class="p-4 border-t">
+                        <button onclick="handleLogout()" class="w-full text-left px-3 py-2 text-red-600 flex items-center gap-2 font-medium">
+                            <i data-lucide="log-out" class="w-5 h-5"></i> Keluar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SCROLLABLE VIEWS -->
+            <div class="flex-1 overflow-y-auto p-4 md:p-6" id="main-scroll-area">
+                
+                <!-- VIEW: DASHBOARD -->
+                <div id="view-dashboard" class="view-section">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">Dashboard Perbandingan</h2>
+                    
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-blue-500">
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Total Barang Dimonitor</p>
+                                <h3 class="text-2xl font-bold text-gray-800" id="stat-items">0</h3>
+                            </div>
+                            <div class="bg-blue-50 p-3 rounded-full text-blue-600"><i data-lucide="box"></i></div>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-emerald-500">
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Total Toko/Sumber</p>
+                                <h3 class="text-2xl font-bold text-gray-800" id="stat-stores">0</h3>
+                            </div>
+                            <div class="bg-emerald-50 p-3 rounded-full text-emerald-600"><i data-lucide="store"></i></div>
+                        </div>
+                        <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-purple-500">
+                            <div>
+                                <p class="text-sm text-gray-500 font-medium">Total Entri Harga</p>
+                                <h3 class="text-2xl font-bold text-gray-800" id="stat-prices">0</h3>
+                            </div>
+                            <div class="bg-purple-50 p-3 rounded-full text-purple-600"><i data-lucide="bar-chart-3"></i></div>
+                        </div>
+                    </div>
+
+                    <!-- Comparison Table -->
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <h3 class="font-bold text-gray-800">Tabel Perbandingan Harga</h3>
+                            <div class="flex gap-2 text-xs">
+                                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-emerald-100 border border-emerald-300"></span> Termurah</span>
+                                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-100 border border-red-300"></span> Termahal</span>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto w-full">
+                            <table class="w-full text-left border-collapse min-w-max" id="dashboard-table">
+                                <!-- Rendered by JS -->
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: MASTER BARANG -->
+                <div id="view-items" class="view-section hidden">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Master Barang</h2>
+                        <button onclick="openModal('modal-item')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md shadow flex items-center gap-2 transition text-sm font-medium">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Tambah Barang
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-gray-50 border-b">
+                                    <tr>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Barcode</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Nama Barang</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Satuan</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Kategori</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm text-center w-24">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-items" class="divide-y divide-gray-100 text-sm">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: MASTER TOKO -->
+                <div id="view-stores" class="view-section hidden">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Master Toko</h2>
+                        <button onclick="openModal('modal-store')" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-md shadow flex items-center gap-2 transition text-sm font-medium">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Tambah Toko
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-gray-50 border-b">
+                                    <tr>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Nama Toko</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Lokasi</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Tgl Ditambahkan</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm text-center w-24">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-stores" class="divide-y divide-gray-100 text-sm">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VIEW: ENTRY HARGA -->
+                <div id="view-prices" class="view-section hidden">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <h2 class="text-2xl font-bold text-gray-800">Data Survei Harga</h2>
+                        <button onclick="openPriceModal()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md shadow flex items-center gap-2 transition text-sm font-medium">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Entry Harga Baru
+                        </button>
+                    </div>
+                    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-gray-50 border-b">
+                                    <tr>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Tanggal</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Barang</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm">Toko</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm text-right">Harga (Rp)</th>
+                                        <th class="p-3 font-semibold text-gray-600 text-sm text-center w-24">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-prices" class="divide-y divide-gray-100 text-sm">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- MODALS (Hidden by default) -->
+
+    <!-- Modal Form Barang -->
+    <div id="modal-item" class="fixed inset-0 bg-gray-900/50 z-40 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg w-full max-w-md shadow-xl flex flex-col max-h-full">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold text-lg" id="modal-item-title">Tambah Barang</h3>
+                <button onclick="closeModal('modal-item')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto">
+                <form id="form-item" onsubmit="saveItem(event)" class="space-y-4">
+                    <input type="hidden" id="item-id">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Barcode / SKU</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="item-barcode" class="flex-1 border-gray-300 rounded-md border p-2 focus:ring-blue-500" placeholder="Ketik atau Scan">
+                            <button type="button" onclick="startBarcodeScan('item-barcode')" class="bg-blue-100 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-200 transition flex items-center gap-1" title="Scan Kamera">
+                                <i data-lucide="camera" class="w-4 h-4"></i> Scan
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nama Barang *</label>
+                        <input type="text" id="item-name" class="w-full border-gray-300 rounded-md border p-2 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Satuan *</label>
+                        <input type="text" id="item-unit" class="w-full border-gray-300 rounded-md border p-2 focus:ring-blue-500" placeholder="Pcs, Kg, Liter" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Kategori</label>
+                        <input type="text" id="item-category" class="w-full border-gray-300 rounded-md border p-2 focus:ring-blue-500">
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 border-t bg-gray-50 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="closeModal('modal-item')" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-100">Batal</button>
+                <button type="submit" form="form-item" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Form Toko -->
+    <div id="modal-store" class="fixed inset-0 bg-gray-900/50 z-40 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg w-full max-w-md shadow-xl">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold text-lg" id="modal-store-title">Tambah Toko</h3>
+                <button onclick="closeModal('modal-store')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
+            </div>
+            <div class="p-4">
+                <form id="form-store" onsubmit="saveStore(event)" class="space-y-4">
+                    <input type="hidden" id="store-id">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nama Toko *</label>
+                        <input type="text" id="store-name" class="w-full border-gray-300 rounded-md border p-2 focus:ring-emerald-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Lokasi/Cabang</label>
+                        <input type="text" id="store-location" class="w-full border-gray-300 rounded-md border p-2 focus:ring-emerald-500">
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 border-t bg-gray-50 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="closeModal('modal-store')" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-100">Batal</button>
+                <button type="submit" form="form-store" class="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Form Entry Harga -->
+    <div id="modal-price" class="fixed inset-0 bg-gray-900/50 z-40 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg w-full max-w-md shadow-xl max-h-full flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold text-lg" id="modal-price-title">Entry Harga Baru</h3>
+                <button onclick="closeModal('modal-price')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto">
+                <form id="form-price" onsubmit="savePrice(event)" class="space-y-4">
+                    <input type="hidden" id="price-id">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Survei *</label>
+                        <input type="date" id="price-date" class="w-full border-gray-300 rounded-md border p-2 focus:ring-purple-500" required>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Barang *</label>
+                        <div class="flex gap-2">
+                            <select id="price-item" class="flex-1 border-gray-300 rounded-md border p-2 focus:ring-purple-500 bg-white" required>
+                                <option value="">-- Pilih Barang --</option>
+                                <!-- Rendered dynamically -->
+                            </select>
+                            <button type="button" onclick="scanToSelect('price-item')" class="bg-blue-100 text-blue-700 px-3 py-2 rounded-md hover:bg-blue-200 transition flex items-center gap-1" title="Scan Barcode untuk Cari">
+                                <i data-lucide="scan" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <p id="price-item-hint" class="text-xs text-green-600 mt-1 hidden">Barang ditemukan dari scan!</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Pilih Toko *</label>
+                        <select id="price-store" class="w-full border-gray-300 rounded-md border p-2 focus:ring-purple-500 bg-white" required>
+                            <option value="">-- Pilih Toko --</option>
+                            <!-- Rendered dynamically -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Harga (Rp) *</label>
+                        <input type="number" id="price-amount" min="0" step="100" class="w-full border-gray-300 rounded-md border p-2 focus:ring-purple-500" required>
+                    </div>
+                </form>
+            </div>
+            <div class="p-4 border-t bg-gray-50 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="closeModal('modal-price')" class="px-4 py-2 border rounded-md text-gray-600 hover:bg-gray-100">Batal</button>
+                <button type="submit" form="form-price" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. MOCK DATA & STATE MANAGEMENT ---
+        // Menyimulasikan struktur dari Google Apps Script / Database
+        
+        let state = {
+            currentUser: null,
+            items: [
+                { id: 'i1', barcode: '899999900001', name: 'Minyak Goreng Bimoli 2L', unit: 'Pouch', category: 'Sembako', created_at: '2023-10-01' },
+                { id: 'i2', barcode: '899999900002', name: 'Beras Pandan Wangi 5Kg', unit: 'Sak', category: 'Sembako', created_at: '2023-10-01' },
+                { id: 'i3', barcode: '899999900003', name: 'Gula Pasir Gulaku 1Kg', unit: 'Pcs', category: 'Sembako', created_at: '2023-10-02' },
+                { id: 'i4', barcode: '899999900004', name: 'Indomie Goreng 85g', unit: 'Bks', category: 'Makanan', created_at: '2023-10-02' }
+            ],
+            stores: [
+                { id: 's1', name: 'Alfamart Setiabudi', location: 'Jl. Setiabudi No 10', created_at: '2023-10-01' },
+                { id: 's2', name: 'Indomaret Sudirman', location: 'Jl. Sudirman Blok B', created_at: '2023-10-01' },
+                { id: 's3', name: 'Superindo Gajah Mada', location: 'Gajah Mada Plaza', created_at: '2023-10-02' }
+            ],
+            prices: [
+                // Menyimpan harga terbaru untuk demo
+                { id: 'p1', item_id: 'i1', store_id: 's1', harga: 38500, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p2', item_id: 'i1', store_id: 's2', harga: 39000, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p3', item_id: 'i1', store_id: 's3', harga: 37500, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p4', item_id: 'i2', store_id: 's1', harga: 72000, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p5', item_id: 'i2', store_id: 's2', harga: 73500, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p6', item_id: 'i2', store_id: 's3', harga: 69900, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p7', item_id: 'i4', store_id: 's1', harga: 3100, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p8', item_id: 'i4', store_id: 's2', harga: 3100, tanggal_survey: '2023-10-25', created_at: '2023-10-25' },
+                { id: 'p9', item_id: 'i4', store_id: 's3', harga: 2900, tanggal_survey: '2023-10-25', created_at: '2023-10-25' }
+            ]
+        };
+
+        // --- 2. UTILITY FUNCTIONS ---
+        
+        function formatRupiah(angka) {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
+        }
+
+        function generateId(prefix) {
+            return prefix + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        function getTodayDate() {
+            return new Date().toISOString().split('T')[0];
+        }
+
+        // Custom Toast Notification
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            let bgClass = type === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 
+                          type === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 
+                          'bg-blue-50 border-blue-200 text-blue-800';
+            let icon = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+            
+            toast.className = `toast-enter flex items-center gap-3 p-4 border rounded-lg shadow-lg ${bgClass} max-w-xs`;
+            toast.innerHTML = `
+                <i data-lucide="${icon}" class="w-5 h-5 flex-shrink-0"></i>
+                <p class="text-sm font-medium">${message}</p>
+            `;
+            
+            container.appendChild(toast);
+            lucide.createIcons({root: toast});
+
+            setTimeout(() => {
+                toast.classList.replace('toast-enter', 'toast-leave');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // --- 3. NAVIGATION & UI LOGIC ---
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const user = document.getElementById('login-username').value;
+            const pass = document.getElementById('login-password').value;
+            
+            if (user === 'admin' && pass === 'admin123') {
+                state.currentUser = { username: 'admin', role: 'admin' };
+                document.getElementById('login-view').classList.add('hidden');
+                document.getElementById('app-view').classList.remove('hidden');
+                initApp();
+                showToast('Login berhasil!');
+            } else {
+                showToast('Username atau password salah!', 'error');
+            }
+        }
+
+        function handleLogout() {
+            state.currentUser = null;
+            document.getElementById('app-view').classList.add('hidden');
+            document.getElementById('login-view').classList.remove('hidden');
+            document.getElementById('login-password').value = '';
+        }
+
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobile-menu');
+            menu.classList.toggle('hidden');
+        }
+
+        function navigate(viewName) {
+            // Update Active Nav Link
+            document.querySelectorAll('.nav-link').forEach(el => {
+                el.classList.remove('bg-blue-50', 'text-blue-700', 'font-medium');
+                el.classList.add('text-gray-600', 'hover:bg-gray-100');
+            });
+            const activeNav = document.getElementById('nav-' + viewName);
+            if(activeNav) {
+                activeNav.classList.add('bg-blue-50', 'text-blue-700', 'font-medium');
+                activeNav.classList.remove('text-gray-600', 'hover:bg-gray-100');
+            }
+
+            // Show selected view, hide others
+            document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+            document.getElementById('view-' + viewName).classList.remove('hidden');
+
+            // Scroll to top
+            document.getElementById('main-scroll-area').scrollTop = 0;
+
+            // Render data specific to view
+            if (viewName === 'dashboard') renderDashboard();
+            if (viewName === 'items') renderItems();
+            if (viewName === 'stores') renderStores();
+            if (viewName === 'prices') renderPrices();
+        }
+
+        function initApp() {
+            lucide.createIcons();
+            navigate('dashboard');
+        }
+
+        // --- 4. CRUD & RENDER LOGIC ---
+
+        // ================= DASHBOARD =================
+        function renderDashboard() {
+            document.getElementById('stat-items').innerText = state.items.length;
+            document.getElementById('stat-stores').innerText = state.stores.length;
+            document.getElementById('stat-prices').innerText = state.prices.length;
+
+            const table = document.getElementById('dashboard-table');
+            
+            // Build Pivot Logic
+            // 1. Get unique stores for columns
+            const stores = [...state.stores];
+            
+            // 2. Build header
+            let thead = `<thead class="bg-gray-50 border-b"><tr>
+                <th class="p-3 font-semibold text-gray-600 text-sm sticky left-0 bg-gray-50 z-10 w-48 shadow-[1px_0_0_0_#e5e7eb]">Nama Barang</th>
+                <th class="p-3 font-semibold text-gray-600 text-sm border-r">Satuan</th>`;
+            
+            stores.forEach(s => {
+                thead += `<th class="p-3 font-semibold text-gray-600 text-sm text-right min-w-[120px]">${s.name}</th>`;
+            });
+            thead += `</tr></thead>`;
+
+            // 3. Build body
+            let tbody = `<tbody class="divide-y divide-gray-100 text-sm">`;
+            
+            state.items.forEach(item => {
+                let rowHtml = `<tr>
+                    <td class="p-3 font-medium text-gray-800 sticky left-0 bg-white z-10 shadow-[1px_0_0_0_#e5e7eb] truncate">
+                        ${item.name}
+                        ${item.barcode ? `<br><span class="text-xs text-gray-400">${item.barcode}</span>` : ''}
+                    </td>
+                    <td class="p-3 text-gray-500 border-r">${item.unit}</td>`;
+                
+                // Collect prices for this item across all stores to find min/max
+                let itemPrices = [];
+                stores.forEach(store => {
+                    // Ambil harga terbaru dari toko ini untuk barang ini
+                    const priceEntries = state.prices.filter(p => p.item_id === item.id && p.store_id === store.id);
+                    if (priceEntries.length > 0) {
+                        // Sort descending by date (assume last entry is latest)
+                        priceEntries.sort((a,b) => new Date(b.tanggal_survey) - new Date(a.tanggal_survey));
+                        itemPrices.push(priceEntries[0].harga);
+                    }
+                });
+
+                const minPrice = itemPrices.length > 1 ? Math.min(...itemPrices) : null;
+                const maxPrice = itemPrices.length > 1 ? Math.max(...itemPrices) : null;
+                const isUniform = minPrice === maxPrice;
+
+                stores.forEach(store => {
+                    const priceEntries = state.prices.filter(p => p.item_id === item.id && p.store_id === store.id);
+                    if (priceEntries.length > 0) {
+                        priceEntries.sort((a,b) => new Date(b.tanggal_survey) - new Date(a.tanggal_survey));
+                        const currentPrice = priceEntries[0].harga;
+                        
+                        let highlightClass = "";
+                        if (!isUniform) {
+                            if (currentPrice === minPrice) highlightClass = "bg-emerald-100 text-emerald-800 font-bold rounded";
+                            else if (currentPrice === maxPrice) highlightClass = "bg-red-100 text-red-800 font-bold rounded";
+                        }
+                        
+                        rowHtml += `<td class="p-3 text-right">
+                            <span class="inline-block px-2 py-1 ${highlightClass}">${formatRupiah(currentPrice)}</span>
+                        </td>`;
+                    } else {
+                        rowHtml += `<td class="p-3 text-right text-gray-300">-</td>`;
+                    }
+                });
+
+                rowHtml += `</tr>`;
+                tbody += rowHtml;
+            });
+            tbody += `</tbody>`;
+
+            table.innerHTML = thead + tbody;
+        }
+
+        // ================= MASTER BARANG =================
+        function renderItems() {
+            const tbody = document.getElementById('table-items');
+            tbody.innerHTML = '';
+            
+            if(state.items.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Belum ada data barang</td></tr>`;
+                return;
+            }
+
+            state.items.forEach(item => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="p-3 text-gray-600 font-mono text-xs">${item.barcode || '-'}</td>
+                        <td class="p-3 font-medium text-gray-800">${item.name}</td>
+                        <td class="p-3 text-gray-600">${item.unit}</td>
+                        <td class="p-3 text-gray-600">
+                            <span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">${item.category || '-'}</span>
+                        </td>
+                        <td class="p-3 text-center">
+                            <button onclick="editItem('${item.id}')" class="text-blue-500 hover:text-blue-700 p-1" title="Edit"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                            <button onclick="deleteItem('${item.id}')" class="text-red-500 hover:text-red-700 p-1" title="Hapus"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            lucide.createIcons();
+        }
+
+        function saveItem(e) {
+            e.preventDefault();
+            const id = document.getElementById('item-id').value;
+            const newItem = {
+                id: id || generateId('i'),
+                barcode: document.getElementById('item-barcode').value,
+                name: document.getElementById('item-name').value,
+                unit: document.getElementById('item-unit').value,
+                category: document.getElementById('item-category').value,
+                created_at: getTodayDate()
+            };
+
+            if (id) {
+                const idx = state.items.findIndex(i => i.id === id);
+                if(idx > -1) state.items[idx] = { ...state.items[idx], ...newItem };
+                showToast('Barang berhasil diupdate');
+            } else {
+                state.items.push(newItem);
+                showToast('Barang berhasil ditambahkan');
+            }
+            
+            closeModal('modal-item');
+            renderItems();
+            populateSelects(); // Update dropdowns
+        }
+
+        function editItem(id) {
+            const item = state.items.find(i => i.id === id);
+            if (item) {
+                document.getElementById('modal-item-title').innerText = 'Edit Barang';
+                document.getElementById('item-id').value = item.id;
+                document.getElementById('item-barcode').value = item.barcode || '';
+                document.getElementById('item-name').value = item.name;
+                document.getElementById('item-unit').value = item.unit;
+                document.getElementById('item-category').value = item.category || '';
+                openModal('modal-item');
+            }
+        }
+
+        function deleteItem(id) {
+            if (confirm('Yakin ingin menghapus barang ini? Data harga terkait mungkin tidak valid lagi.')) {
+                state.items = state.items.filter(i => i.id !== id);
+                // Option: Delete cascade prices here
+                showToast('Barang dihapus');
+                renderItems();
+                populateSelects();
+            }
+        }
+
+        // ================= MASTER TOKO =================
+        function renderStores() {
+            const tbody = document.getElementById('table-stores');
+            tbody.innerHTML = '';
+            
+            if(state.stores.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-500">Belum ada data toko</td></tr>`;
+                return;
+            }
+
+            state.stores.forEach(store => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="p-3 font-medium text-gray-800">${store.name}</td>
+                        <td class="p-3 text-gray-600">${store.location || '-'}</td>
+                        <td class="p-3 text-gray-600 text-xs">${store.created_at}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="editStore('${store.id}')" class="text-emerald-500 hover:text-emerald-700 p-1" title="Edit"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
+                            <button onclick="deleteStore('${store.id}')" class="text-red-500 hover:text-red-700 p-1" title="Hapus"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            lucide.createIcons();
+        }
+
+        function saveStore(e) {
+            e.preventDefault();
+            const id = document.getElementById('store-id').value;
+            const newStore = {
+                id: id || generateId('s'),
+                name: document.getElementById('store-name').value,
+                location: document.getElementById('store-location').value,
+                created_at: getTodayDate()
+            };
+
+            if (id) {
+                const idx = state.stores.findIndex(s => s.id === id);
+                if(idx > -1) state.stores[idx] = { ...state.stores[idx], ...newStore };
+                showToast('Toko berhasil diupdate');
+            } else {
+                state.stores.push(newStore);
+                showToast('Toko berhasil ditambahkan');
+            }
+            
+            closeModal('modal-store');
+            renderStores();
+            populateSelects();
+        }
+
+        function editStore(id) {
+            const store = state.stores.find(s => s.id === id);
+            if (store) {
+                document.getElementById('modal-store-title').innerText = 'Edit Toko';
+                document.getElementById('store-id').value = store.id;
+                document.getElementById('store-name').value = store.name;
+                document.getElementById('store-location').value = store.location || '';
+                openModal('modal-store');
+            }
+        }
+
+        function deleteStore(id) {
+            if (confirm('Yakin ingin menghapus toko ini?')) {
+                state.stores = state.stores.filter(s => s.id !== id);
+                showToast('Toko dihapus');
+                renderStores();
+                populateSelects();
+            }
+        }
+
+        // ================= ENTRY HARGA =================
+        function renderPrices() {
+            const tbody = document.getElementById('table-prices');
+            tbody.innerHTML = '';
+            
+            // Sort by Date desc
+            const sortedPrices = [...state.prices].sort((a,b) => new Date(b.tanggal_survey) - new Date(a.tanggal_survey));
+
+            if(sortedPrices.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-500">Belum ada entry harga</td></tr>`;
+                return;
+            }
+
+            sortedPrices.forEach(price => {
+                const item = state.items.find(i => i.id === price.item_id);
+                const store = state.stores.find(s => s.id === price.store_id);
+                
+                if(!item || !store) return; // Skip if master data deleted
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="p-3 text-gray-600 text-sm">${price.tanggal_survey}</td>
+                        <td class="p-3 font-medium text-gray-800">${item.name} <span class="text-xs text-gray-400 font-normal ml-1">(${item.unit})</span></td>
+                        <td class="p-3 text-gray-600">${store.name}</td>
+                        <td class="p-3 text-right font-bold text-gray-800">${formatRupiah(price.harga)}</td>
+                        <td class="p-3 text-center">
+                            <button onclick="deletePrice('${price.id}')" class="text-red-500 hover:text-red-700 p-1" title="Hapus"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            lucide.createIcons();
+        }
+
+        function populateSelects() {
+            const itemSelect = document.getElementById('price-item');
+            const storeSelect = document.getElementById('price-store');
+            
+            let itemHtml = `<option value="">-- Pilih Barang --</option>`;
+            state.items.forEach(i => {
+                itemHtml += `<option value="${i.id}">${i.barcode ? '['+i.barcode+'] ' : ''}${i.name}</option>`;
+            });
+            itemSelect.innerHTML = itemHtml;
+
+            let storeHtml = `<option value="">-- Pilih Toko --</option>`;
+            state.stores.forEach(s => {
+                storeHtml += `<option value="${s.id}">${s.name}</option>`;
+            });
+            storeSelect.innerHTML = storeHtml;
+        }
+
+        function openPriceModal() {
+            populateSelects();
+            document.getElementById('modal-price-title').innerText = 'Entry Harga Baru';
+            document.getElementById('price-id').value = '';
+            document.getElementById('form-price').reset();
+            document.getElementById('price-date').value = getTodayDate();
+            document.getElementById('price-item-hint').classList.add('hidden');
+            openModal('modal-price');
+        }
+
+        function savePrice(e) {
+            e.preventDefault();
+            const newPrice = {
+                id: generateId('p'),
+                item_id: document.getElementById('price-item').value,
+                store_id: document.getElementById('price-store').value,
+                harga: parseFloat(document.getElementById('price-amount').value),
+                tanggal_survey: document.getElementById('price-date').value,
+                created_at: getTodayDate()
+            };
+
+            state.prices.push(newPrice);
+            showToast('Harga berhasil dicatat');
+            closeModal('modal-price');
+            renderPrices();
+        }
+
+        function deletePrice(id) {
+            if (confirm('Hapus record harga ini?')) {
+                state.prices = state.prices.filter(p => p.id !== id);
+                showToast('Harga dihapus');
+                renderPrices();
+            }
+        }
+
+        // --- 5. MODAL MANAGEMENT ---
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+            if(id === 'modal-item' && !document.getElementById('item-id').value) {
+                document.getElementById('form-item').reset();
+                document.getElementById('modal-item-title').innerText = 'Tambah Barang';
+            }
+            if(id === 'modal-store' && !document.getElementById('store-id').value) {
+                document.getElementById('form-store').reset();
+                document.getElementById('modal-store-title').innerText = 'Tambah Toko';
+            }
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+
+        // --- 6. BARCODE SCANNER INTEGRATION (html5-qrcode) ---
+        let html5QrcodeScanner = null;
+        let currentTargetInput = null;
+
+        function startBarcodeScan(targetInputId) {
+            currentTargetInput = targetInputId;
+            document.getElementById('scanner-modal').classList.remove('hidden');
+            
+            if(!html5QrcodeScanner) {
+                html5QrcodeScanner = new Html5Qrcode("reader");
+            }
+
+            const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+            
+            // Prefer back camera
+            html5QrcodeScanner.start({ facingMode: "environment" }, config, onScanSuccess)
+            .catch(err => {
+                alert("Gagal mengakses kamera: " + err);
+                closeScanner();
+            });
+        }
+
+        function closeScanner() {
+            if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
+                html5QrcodeScanner.stop().then(() => {
+                    document.getElementById('scanner-modal').classList.add('hidden');
+                }).catch(err => {
+                    console.log("Error stopping scanner", err);
+                    document.getElementById('scanner-modal').classList.add('hidden');
+                });
+            } else {
+                document.getElementById('scanner-modal').classList.add('hidden');
+            }
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            console.log(`Scan result: ${decodedText}`);
+            
+            if(currentTargetInput === 'item-barcode') {
+                // Di form master barang
+                document.getElementById('item-barcode').value = decodedText;
+                closeScanner();
+                showToast('Barcode berhasil dipindai!');
+            } 
+            else if (currentTargetInput === 'price-item-scan') {
+                // Di form Entry Harga
+                closeScanner();
+                findAndSelectItemByBarcode(decodedText);
+            }
+        }
+
+        // Fitur khusus untuk di modal Entry Harga
+        function scanToSelect(selectId) {
+            currentTargetInput = 'price-item-scan';
+            startBarcodeScan();
+        }
+
+        function findAndSelectItemByBarcode(barcode) {
+            const item = state.items.find(i => i.barcode === barcode);
+            const selectEl = document.getElementById('price-item');
+            const hintEl = document.getElementById('price-item-hint');
+            
+            if(item) {
+                selectEl.value = item.id;
+                hintEl.classList.remove('hidden');
+                hintEl.innerText = `Terpilih: ${item.name}`;
+                hintEl.className = "text-xs text-green-600 mt-1 font-medium";
+                showToast(`Barang ditemukan: ${item.name}`);
+            } else {
+                hintEl.classList.remove('hidden');
+                hintEl.innerText = `Barcode ${barcode} tidak terdaftar di Master Barang.`;
+                hintEl.className = "text-xs text-red-500 mt-1 font-medium";
+                showToast('Barang tidak ditemukan', 'error');
+            }
+        }
+
+        // Initialize icons on load just in case (login screen)
+        lucide.createIcons();
+
+    </script>
+</body>
+</html>
