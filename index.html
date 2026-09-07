@@ -426,6 +426,28 @@
     </div>
 
     <script>
+        // --- 0. API GATEWAY & CONFIGURATION ---
+        const IS_PREVIEW = false; // Ubah ke false jika sudah mendeploy GAS dan memasukkan URL di bawah
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbzzxZnz68Uj9pudnbmcC0wpPuDk0cIZ_in4V1Ly_mimH28egqklOWCeiqTbdRxGIvbt/exec";
+
+        // Fungsi perantara untuk mengatur arah komunikasi (Lokal/Mock vs Live Backend GAS)
+        async function apiCall(action, payload = {}) {
+            if (IS_PREVIEW) {
+                return await handleMockAPI(action, payload);
+            }
+            try {
+                const res = await fetch(GAS_URL, {
+                    method: "POST",
+                    redirect: "follow",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({ action, payload })
+                });
+                return await res.json();
+            } catch (err) {
+                return { status: "error", message: "Koneksi GAS Gagal: " + err.message };
+            }
+        }
+
         // --- 1. MOCK DATA & STATE MANAGEMENT ---
         // Menyimulasikan struktur dari Google Apps Script / Database
         
@@ -455,6 +477,47 @@
                 { id: 'p9', item_id: 'i4', store_id: 's3', harga: 2900, tanggal_survey: '2023-10-25', created_at: '2023-10-25' }
             ]
         };
+
+        // Handler Mock API untuk mensimulasikan delay server lokal
+        async function handleMockAPI(action, payload) {
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    if (action === 'login') {
+                        if (payload.username === 'admin' && payload.password === 'admin123') {
+                            resolve({ status: 'success', data: { username: 'admin', role: 'admin' } });
+                        } else {
+                            resolve({ status: 'error', message: 'Username atau password salah' });
+                        }
+                    }
+                    else if (action === 'getAll') {
+                        resolve({ status: 'success', data: { items: state.items, stores: state.stores, prices: state.prices } });
+                    }
+                    else if (action === 'create') {
+                        if(payload.table === 'items') state.items.push(payload.data);
+                        if(payload.table === 'stores') state.stores.push(payload.data);
+                        if(payload.table === 'prices') state.prices.push(payload.data);
+                        resolve({ status: 'success', data: payload.data });
+                    }
+                    else if (action === 'update') {
+                        if(payload.table === 'items') {
+                            let idx = state.items.findIndex(i => i.id === payload.id);
+                            if(idx > -1) state.items[idx] = { ...state.items[idx], ...payload.data };
+                        }
+                        if(payload.table === 'stores') {
+                            let idx = state.stores.findIndex(s => s.id === payload.id);
+                            if(idx > -1) state.stores[idx] = { ...state.stores[idx], ...payload.data };
+                        }
+                        resolve({ status: 'success' });
+                    }
+                    else if (action === 'delete') {
+                        if(payload.table === 'items') state.items = state.items.filter(i => i.id !== payload.id);
+                        if(payload.table === 'stores') state.stores = state.stores.filter(s => s.id !== payload.id);
+                        if(payload.table === 'prices') state.prices = state.prices.filter(p => p.id !== payload.id);
+                        resolve({ status: 'success' });
+                    }
+                }, 400); // Simulasi waktu tunggu respon server
+            });
+        }
 
         // --- 2. UTILITY FUNCTIONS ---
         
@@ -497,19 +560,30 @@
 
         // --- 3. NAVIGATION & UI LOGIC ---
 
-        function handleLogin(e) {
+        async function handleLogin(e) {
             e.preventDefault();
             const user = document.getElementById('login-username').value;
             const pass = document.getElementById('login-password').value;
             
-            if (user === 'admin' && pass === 'admin123') {
-                state.currentUser = { username: 'admin', role: 'admin' };
+            // Tampilkan loading di tombol
+            const btn = e.target.querySelector('button[type="submit"]');
+            const oldText = btn.innerText;
+            btn.innerText = 'Memproses...';
+            btn.disabled = true;
+
+            const res = await apiCall('login', { username: user, password: pass });
+            
+            btn.innerText = oldText;
+            btn.disabled = false;
+            
+            if (res.status === 'success') {
+                state.currentUser = res.data;
                 document.getElementById('login-view').classList.add('hidden');
                 document.getElementById('app-view').classList.remove('hidden');
                 initApp();
                 showToast('Login berhasil!');
             } else {
-                showToast('Username atau password salah!', 'error');
+                showToast(res.message || 'Username atau password salah!', 'error');
             }
         }
 
@@ -551,9 +625,21 @@
             if (viewName === 'prices') renderPrices();
         }
 
-        function initApp() {
+        async function initApp() {
             lucide.createIcons();
+            showToast('Memuat data...', 'info');
+            await refreshData();
             navigate('dashboard');
+        }
+        
+        // Mengambil master data terbaru dari server (Mock/GAS)
+        async function refreshData() {
+            const res = await apiCall('getAll');
+            if(res.status === 'success') {
+                state.items = res.data.items || [];
+                state.stores = res.data.stores || [];
+                state.prices = res.data.prices || [];
+            }
         }
 
         // --- 4. CRUD & RENDER LOGIC ---
@@ -664,9 +750,15 @@
             lucide.createIcons();
         }
 
-        function saveItem(e) {
+        async function saveItem(e) {
             e.preventDefault();
             const id = document.getElementById('item-id').value;
+            
+            // UI Loading
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerText = 'Menyimpan...';
+
             const newItem = {
                 id: id || generateId('i'),
                 barcode: document.getElementById('item-barcode').value,
@@ -676,18 +768,26 @@
                 created_at: getTodayDate()
             };
 
+            let res;
             if (id) {
-                const idx = state.items.findIndex(i => i.id === id);
-                if(idx > -1) state.items[idx] = { ...state.items[idx], ...newItem };
-                showToast('Barang berhasil diupdate');
+                res = await apiCall('update', { table: 'items', id: id, data: newItem });
+                if(res.status === 'success') showToast('Barang berhasil diupdate');
             } else {
-                state.items.push(newItem);
-                showToast('Barang berhasil ditambahkan');
+                res = await apiCall('create', { table: 'items', data: newItem });
+                if(res.status === 'success') showToast('Barang berhasil ditambahkan');
             }
             
-            closeModal('modal-item');
-            renderItems();
-            populateSelects(); // Update dropdowns
+            btn.disabled = false;
+            btn.innerText = 'Simpan';
+            
+            if(res.status === 'success') {
+                closeModal('modal-item');
+                await refreshData();
+                renderItems();
+                populateSelects(); // Update dropdowns
+            } else {
+                showToast(res.message, 'error');
+            }
         }
 
         function editItem(id) {
@@ -703,13 +803,17 @@
             }
         }
 
-        function deleteItem(id) {
+        async function deleteItem(id) {
             if (confirm('Yakin ingin menghapus barang ini? Data harga terkait mungkin tidak valid lagi.')) {
-                state.items = state.items.filter(i => i.id !== id);
-                // Option: Delete cascade prices here
-                showToast('Barang dihapus');
-                renderItems();
-                populateSelects();
+                const res = await apiCall('delete', { table: 'items', id: id });
+                if(res.status === 'success') {
+                    showToast('Barang dihapus');
+                    await refreshData();
+                    renderItems();
+                    populateSelects();
+                } else {
+                    showToast(res.message, 'error');
+                }
             }
         }
 
@@ -739,9 +843,15 @@
             lucide.createIcons();
         }
 
-        function saveStore(e) {
+        async function saveStore(e) {
             e.preventDefault();
             const id = document.getElementById('store-id').value;
+            
+            // UI Loading
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerText = 'Menyimpan...';
+
             const newStore = {
                 id: id || generateId('s'),
                 name: document.getElementById('store-name').value,
@@ -749,18 +859,26 @@
                 created_at: getTodayDate()
             };
 
+            let res;
             if (id) {
-                const idx = state.stores.findIndex(s => s.id === id);
-                if(idx > -1) state.stores[idx] = { ...state.stores[idx], ...newStore };
-                showToast('Toko berhasil diupdate');
+                res = await apiCall('update', { table: 'stores', id: id, data: newStore });
+                if(res.status === 'success') showToast('Toko berhasil diupdate');
             } else {
-                state.stores.push(newStore);
-                showToast('Toko berhasil ditambahkan');
+                res = await apiCall('create', { table: 'stores', data: newStore });
+                if(res.status === 'success') showToast('Toko berhasil ditambahkan');
             }
             
-            closeModal('modal-store');
-            renderStores();
-            populateSelects();
+            btn.disabled = false;
+            btn.innerText = 'Simpan';
+            
+            if(res.status === 'success') {
+                closeModal('modal-store');
+                await refreshData();
+                renderStores();
+                populateSelects();
+            } else {
+                showToast(res.message, 'error');
+            }
         }
 
         function editStore(id) {
@@ -774,12 +892,17 @@
             }
         }
 
-        function deleteStore(id) {
+        async function deleteStore(id) {
             if (confirm('Yakin ingin menghapus toko ini?')) {
-                state.stores = state.stores.filter(s => s.id !== id);
-                showToast('Toko dihapus');
-                renderStores();
-                populateSelects();
+                const res = await apiCall('delete', { table: 'stores', id: id });
+                if(res.status === 'success') {
+                    showToast('Toko dihapus');
+                    await refreshData();
+                    renderStores();
+                    populateSelects();
+                } else {
+                    showToast(res.message, 'error');
+                }
             }
         }
 
@@ -844,8 +967,14 @@
             openModal('modal-price');
         }
 
-        function savePrice(e) {
+        async function savePrice(e) {
             e.preventDefault();
+            
+            // UI Loading
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerText = 'Menyimpan...';
+
             const newPrice = {
                 id: generateId('p'),
                 item_id: document.getElementById('price-item').value,
@@ -855,17 +984,31 @@
                 created_at: getTodayDate()
             };
 
-            state.prices.push(newPrice);
-            showToast('Harga berhasil dicatat');
-            closeModal('modal-price');
-            renderPrices();
+            const res = await apiCall('create', { table: 'prices', data: newPrice });
+            
+            btn.disabled = false;
+            btn.innerText = 'Simpan';
+
+            if(res.status === 'success') {
+                showToast('Harga berhasil dicatat');
+                closeModal('modal-price');
+                await refreshData();
+                renderPrices();
+            } else {
+                showToast(res.message, 'error');
+            }
         }
 
-        function deletePrice(id) {
+        async function deletePrice(id) {
             if (confirm('Hapus record harga ini?')) {
-                state.prices = state.prices.filter(p => p.id !== id);
-                showToast('Harga dihapus');
-                renderPrices();
+                const res = await apiCall('delete', { table: 'prices', id: id });
+                if(res.status === 'success') {
+                    showToast('Harga dihapus');
+                    await refreshData();
+                    renderPrices();
+                } else {
+                    showToast(res.message, 'error');
+                }
             }
         }
 
