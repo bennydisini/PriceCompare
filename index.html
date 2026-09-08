@@ -754,8 +754,8 @@
             e.preventDefault();
             const id = document.getElementById('item-id').value;
             
-            // UI Loading
-            const btn = e.target.querySelector('button[type="submit"]');
+            // UI Loading - PERBAIKAN DI SINI
+            const btn = document.querySelector(`button[form="${e.target.id}"]`);
             btn.disabled = true;
             btn.innerText = 'Menyimpan...';
 
@@ -847,8 +847,8 @@
             e.preventDefault();
             const id = document.getElementById('store-id').value;
             
-            // UI Loading
-            const btn = e.target.querySelector('button[type="submit"]');
+            // UI Loading - PERBAIKAN DI SINI
+            const btn = document.querySelector(`button[form="${e.target.id}"]`);
             btn.disabled = true;
             btn.innerText = 'Menyimpan...';
 
@@ -970,8 +970,8 @@
         async function savePrice(e) {
             e.preventDefault();
             
-            // UI Loading
-            const btn = e.target.querySelector('button[type="submit"]');
+            // UI Loading - PERBAIKAN DI SINI
+            const btn = document.querySelector(`button[form="${e.target.id}"]`);
             btn.disabled = true;
             btn.innerText = 'Menyimpan...';
 
